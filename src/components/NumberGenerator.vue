@@ -28,12 +28,10 @@
       <button type="submit" class="btn btn-primary mb-3 me-2">生成</button>
     </form>
 
-    <div v-if="progress > 0" class="d-flex align-items-center mb-4">
-      <div class="progress" style="flex-grow: 1;">
-        <div class="progress-bar" role="progressbar" :style="{ width: progress + '%', backgroundColor: progress === 100 ? 'green' : '' }" :aria-valuenow="progress" aria-valuemin="0" aria-valuemax="100">{{ progress.toFixed(2) }}%</div>
-      </div>
-      <button v-if="isLoading" type="button" class="btn btn-danger ms-3" @click="stopGeneration">停止</button>
-      <button v-if="!isLoading && progress === 100" type="button" class="btn btn-success ms-3" @click="downloadNumbers">下载</button>
+    <div v-for="task in tasks" :key="task.taskId" class="mb-4">
+      <TaskProgress :taskId="task.taskId" :status="task.status" :progress="task.progress" />
+      <button v-if="!task.isCompleted" type="button" class="btn btn-danger ms-3" @click="stopTask(task.taskId)">停止</button>
+      <button v-if="task.isCompleted" type="button" class="btn btn-success ms-3" @click="downloadTaskResult(task.taskId)">下载</button>
     </div>
 
     <AlertMessage ref="alertMessage" />
@@ -53,24 +51,22 @@
 import axios from 'axios';
 import AlertMessage from './AlertMessage.vue';
 import PaginationComponent from './PaginationComponent.vue';
+import TaskProgress from './TaskProgress.vue';
 
 export default {
   components: {
     AlertMessage,
-    PaginationComponent
+    PaginationComponent,
+    TaskProgress
   },
   data() {
     return {
       prefixes: JSON.parse(localStorage.getItem('prefixes') || '[""]'),
       length: parseInt(localStorage.getItem('length') || '10'),
       count: parseInt(localStorage.getItem('count') || '1'),
-      numbers: [],
+      tasks: [],
       histories: JSON.parse(localStorage.getItem('histories') || '[]'),
-      isLoading: false,
-      progress: 0,
       prefixError: '',
-      stopRequested: false,
-      errorMessage: '',
       exhaustedPrefixes: [],
       currentPage: 1,
       itemsPerPage: 15
@@ -123,97 +119,60 @@ export default {
         alert(this.prefixError);
         return;
       }
-      this.isLoading = true;
-      localStorage.setItem('isLoading', this.isLoading);
 
-      this.progress = 0;
-      this.stopRequested = false;
-      this.errorMessage = '';
-      this.exhaustedPrefixes = [];
-      const prefixArray = this.prefixes.filter(p => p.trim());
-      const totalRequests = this.count;
-      let completedRequests = 0;
-      const numbersPerPrefix = Math.ceil(this.count / prefixArray.length);
-
-      const updateProgress = () => {
-        completedRequests += 1;
-        this.progress = (completedRequests / totalRequests) * 100;
-        if (completedRequests >= totalRequests || this.stopRequested) {
-          this.isLoading = false;
-          this.progress = 100;
-          localStorage.setItem('isLoading', this.isLoading);
-        }
-      };
-
-      this.numbers = [];
-
-      for (let prefix of prefixArray) {
-        if (this.stopRequested) break;
-        for (let i = 0; i < numbersPerPrefix; i++) {
-          if (this.stopRequested) break;
-          if (this.numbers.length >= this.count) break;
-          if (this.exhaustedPrefixes.includes(prefix)) continue;
-          try {
-            const response = await axios.post('/api/numbers/generate/', {
-              prefixes: [prefix],
-              length: this.length,
-              count: 1
-            });
-            if (response.status === 207) {
-              this.exhaustedPrefixes.push(prefix);
-              this.numbers.push(...response.data.numbers);
-              this.$refs.alertMessage.addMessage(`前缀 ${response.data.exhausted_prefixes.join(', ')} 已经无新的号码可以生成`);
-              if (this.exhaustedPrefixes.length === prefixArray.length) {
-                this.$refs.alertMessage.addMessage('所有前缀段都已无新的号码可以生成');
-                this.isLoading = false;
-                this.progress = 100;
-                localStorage.setItem('isLoading', this.isLoading);
-                return;
-              }
-            } else {
-              this.numbers.push(...response.data);
-              updateProgress();
-            }
-          } catch (error) {
-            console.error('生成号码时出错：', error);
-            this.$refs.alertMessage.addMessage('生成号码时发生错误，请重试');
-            this.isLoading = false;
-            this.progress = 100;
-            localStorage.setItem('isLoading', this.isLoading);
-            return;
+      const response = await axios.post('/api/tasks/start/', {
+        prefixes: this.prefixes,
+        length: this.length,
+        count: this.count
+      });
+      const taskId = response.data.task_id;
+      this.tasks.push({ taskId, status: 'running', progress: 0, isCompleted: false });
+      this.checkTaskStatus(taskId);
+    },
+    async checkTaskStatus(taskId) {
+      const task = this.tasks.find(t => t.taskId === taskId);
+      if (task) {
+        try {
+          const response = await axios.get(`/api/tasks/${taskId}/status/`);
+          const { status, progress, result } = response.data;
+          console.log(`Task ${taskId} status: ${status}, progress: ${progress}`);
+          task.status = status;
+          task.progress = progress;
+          task.isCompleted = status === 'completed';
+          if (!task.isCompleted) {
+            setTimeout(() => this.checkTaskStatus(taskId), 1000);
+          } else {
+            this.addToHistory(taskId, result);
           }
+        } catch (error) {
+          console.error('Error fetching task status:', error);
         }
       }
-
-      this.isLoading = false;
-      this.progress = 100;
-      this.addToHistory(this.numbers);
-      localStorage.setItem('isLoading', this.isLoading);
     },
-    stopGeneration() {
-      this.stopRequested = true;
-      this.isLoading = false;
-      this.progress = 100;
-      localStorage.setItem('isLoading', this.isLoading);
+    stopTask(/* taskId */) {
+      // 实现停止任务的逻辑，可以是通过API调用告诉后端停止任务
     },
-    downloadNumbers() {
-      const blob = new Blob([this.numbers.join('\n')], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'generated_numbers.txt';
-      a.click();
-      URL.revokeObjectURL(url);
+    downloadTaskResult(taskId) {
+      const task = this.tasks.find(t => t.taskId === taskId);
+      if (task && task.isCompleted) {
+        const blob = new Blob([task.result], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `task_${taskId}_result.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
     },
-    addToHistory(numbers) {
+    addToHistory(taskId, result) {
       const timestamp = new Date().toLocaleString();
       const fileName = `generated_numbers_${timestamp.replace(/[/: ]/g, '_')}.txt`;
-      const history = { timestamp, fileName, numbers };
+      const history = { timestamp, fileName, result };
       this.histories.push(history);
       localStorage.setItem('histories', JSON.stringify(this.histories));
     },
     downloadHistory(history) {
-      const blob = new Blob([history.numbers.join('\n')], { type: 'text/plain' });
+      const blob = new Blob([history.result], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -223,11 +182,6 @@ export default {
     },
     changePage(page) {
       this.currentPage = page;
-    }
-  },
-  mounted() {
-    if (JSON.parse(localStorage.getItem('isLoading'))) {
-      this.generateNumbers();
     }
   }
 };
@@ -243,12 +197,5 @@ export default {
 }
 .border-red {
   border: 1px solid red;
-}
-.progress {
-  display: flex;
-  align-items: center;
-}
-.progress-bar {
-  flex: 1;
 }
 </style>
