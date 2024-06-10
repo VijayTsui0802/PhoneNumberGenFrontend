@@ -2,7 +2,6 @@
   <div class="container mt-4">
     <h1 class="mb-4 text-center">号码生成器</h1>
 
-    <!-- Prefix Section -->
     <div class="form-group mb-3">
       <label for="prefix">前缀：</label>
       <div class="d-flex flex-wrap">
@@ -13,7 +12,6 @@
       </div>
     </div>
 
-    <!-- Other Inputs Section -->
     <form @submit.prevent="generateNumbers" class="form-inline d-flex flex-wrap align-items-center justify-content-center mb-3">
       <button type="button" class="btn btn-secondary mb-3 me-2" @click="addPrefix">添加前缀</button>
 
@@ -30,7 +28,6 @@
       <button type="submit" class="btn btn-primary mb-3 me-2">生成</button>
     </form>
 
-    <!-- Progress Bar Section -->
     <div v-if="progress > 0" class="d-flex align-items-center mb-4">
       <div class="progress" style="flex-grow: 1;">
         <div class="progress-bar" role="progressbar" :style="{ width: progress + '%', backgroundColor: progress === 100 ? 'green' : '' }" :aria-valuenow="progress" aria-valuemin="0" aria-valuemax="100">{{ progress.toFixed(2) }}%</div>
@@ -39,10 +36,8 @@
       <button v-if="!isLoading && progress === 100" type="button" class="btn btn-success ms-3" @click="downloadNumbers">下载</button>
     </div>
 
-    <!-- Alert Messages -->
     <AlertMessage ref="alertMessage" />
 
-    <!-- History Section -->
     <h5 class="mt-4">历史记录</h5>
     <ul class="list-group">
       <li class="list-group-item" v-for="history in paginatedHistories" :key="history.timestamp">
@@ -129,6 +124,8 @@ export default {
         return;
       }
       this.isLoading = true;
+      localStorage.setItem('isLoading', this.isLoading);
+
       this.progress = 0;
       this.stopRequested = false;
       this.errorMessage = '';
@@ -143,7 +140,8 @@ export default {
         this.progress = (completedRequests / totalRequests) * 100;
         if (completedRequests >= totalRequests || this.stopRequested) {
           this.isLoading = false;
-          this.progress = 100; // Ensure progress is set to 100% on completion
+          this.progress = 100;
+          localStorage.setItem('isLoading', this.isLoading);
         }
       };
 
@@ -169,6 +167,7 @@ export default {
                 this.$refs.alertMessage.addMessage('所有前缀段都已无新的号码可以生成');
                 this.isLoading = false;
                 this.progress = 100;
+                localStorage.setItem('isLoading', this.isLoading);
                 return;
               }
             } else {
@@ -180,19 +179,22 @@ export default {
             this.$refs.alertMessage.addMessage('生成号码时发生错误，请重试');
             this.isLoading = false;
             this.progress = 100;
+            localStorage.setItem('isLoading', this.isLoading);
             return;
           }
         }
       }
 
       this.isLoading = false;
-      this.addToHistory(this.numbers);
       this.progress = 100;
+      this.addToHistory(this.numbers);
+      localStorage.setItem('isLoading', this.isLoading);
     },
     stopGeneration() {
       this.stopRequested = true;
       this.isLoading = false;
       this.progress = 100;
+      localStorage.setItem('isLoading', this.isLoading);
     },
     downloadNumbers() {
       const blob = new Blob([this.numbers.join('\n')], { type: 'text/plain' });
@@ -221,6 +223,11 @@ export default {
     },
     changePage(page) {
       this.currentPage = page;
+    }
+  },
+  mounted() {
+    if (JSON.parse(localStorage.getItem('isLoading'))) {
+      this.generateNumbers();
     }
   }
 };

@@ -1,4 +1,3 @@
-<!-- phonenumbergenfrontend/src/views/HomeView.vue -->
 <template>
   <div>
     <NumberGenerator />
