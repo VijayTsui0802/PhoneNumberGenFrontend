@@ -28,35 +28,24 @@
       <button type="submit" class="btn btn-primary mb-3 me-2">生成</button>
     </form>
 
-    <div v-for="task in tasks" :key="task.taskId" class="mb-4">
+    <div v-for="task in tasks" :key="task.taskId" class="mb-4 d-flex align-items-center">
       <TaskProgress :taskId="task.taskId" :status="task.status" :progress="task.progress" />
       <button v-if="!task.isCompleted" type="button" class="btn btn-danger ms-3" @click="stopTask(task.taskId)">停止</button>
       <button v-if="task.isCompleted" type="button" class="btn btn-success ms-3" @click="downloadTaskResult(task.taskId)">下载</button>
     </div>
 
     <AlertMessage ref="alertMessage" />
-
-    <h5 class="mt-4">历史记录</h5>
-    <ul class="list-group">
-      <li class="list-group-item" v-for="history in paginatedHistories" :key="history.timestamp">
-        {{ history.timestamp }} -
-        <button @click="downloadHistory(history)" class="btn btn-link">{{ history.fileName }}</button>
-      </li>
-    </ul>
-    <PaginationComponent :currentPage="currentPage" :totalPages="totalPages" @page-changed="changePage" />
   </div>
 </template>
 
 <script>
 import axios from 'axios';
 import AlertMessage from './AlertMessage.vue';
-import PaginationComponent from './PaginationComponent.vue';
 import TaskProgress from './TaskProgress.vue';
 
 export default {
   components: {
     AlertMessage,
-    PaginationComponent,
     TaskProgress
   },
   data() {
@@ -64,26 +53,10 @@ export default {
       prefixes: JSON.parse(localStorage.getItem('prefixes') || '[""]'),
       length: parseInt(localStorage.getItem('length') || '10'),
       count: parseInt(localStorage.getItem('count') || '1'),
-      tasks: [],
-      histories: JSON.parse(localStorage.getItem('histories') || '[]'),
+      tasks: JSON.parse(localStorage.getItem('tasks') || '[]'),
       prefixError: '',
       exhaustedPrefixes: [],
-      currentPage: 1,
-      itemsPerPage: 15
     };
-  },
-  computed: {
-    sortedHistories() {
-      return this.histories.slice().sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    },
-    totalPages() {
-      return Math.ceil(this.histories.length / this.itemsPerPage);
-    },
-    paginatedHistories() {
-      const start = (this.currentPage - 1) * this.itemsPerPage;
-      const end = start + this.itemsPerPage;
-      return this.sortedHistories.slice(start, end);
-    }
   },
   watch: {
     prefixes: {
@@ -97,7 +70,20 @@ export default {
     },
     count(newVal) {
       localStorage.setItem('count', newVal);
+    },
+    tasks: {
+      handler(newVal) {
+        localStorage.setItem('tasks', JSON.stringify(newVal));
+      },
+      deep: true
     }
+  },
+  mounted() {
+    this.tasks.forEach(task => {
+      if (!task.isCompleted) {
+        this.checkTaskStatus(task.taskId);
+      }
+    });
   },
   methods: {
     addPrefix() {
@@ -126,7 +112,7 @@ export default {
         count: this.count
       });
       const taskId = response.data.task_id;
-      this.tasks.push({ taskId, status: 'running', progress: 0, isCompleted: false });
+      this.tasks.unshift({ taskId, status: 'running', progress: 0, isCompleted: false });
       this.checkTaskStatus(taskId);
     },
     async checkTaskStatus(taskId) {
@@ -134,15 +120,12 @@ export default {
       if (task) {
         try {
           const response = await axios.get(`/api/tasks/${taskId}/status/`);
-          const { status, progress, result } = response.data;
-          console.log(`Task ${taskId} status: ${status}, progress: ${progress}`);
+          const { status, progress } = response.data;  // 移除未使用的 result
           task.status = status;
           task.progress = progress;
           task.isCompleted = status === 'completed';
           if (!task.isCompleted) {
             setTimeout(() => this.checkTaskStatus(taskId), 1000);
-          } else {
-            this.addToHistory(taskId, result);
           }
         } catch (error) {
           console.error('Error fetching task status:', error);
@@ -152,36 +135,22 @@ export default {
     stopTask(/* taskId */) {
       // 实现停止任务的逻辑，可以是通过API调用告诉后端停止任务
     },
-    downloadTaskResult(taskId) {
-      const task = this.tasks.find(t => t.taskId === taskId);
-      if (task && task.isCompleted) {
-        const blob = new Blob([task.result], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
+    async downloadTaskResult(taskId) {
+      try {
+        const response = await axios.get(`/api/tasks/${taskId}/download/`, {
+          responseType: 'blob'
+        });
+        const url = window.URL.createObjectURL(new Blob([response.data]));
         const a = document.createElement('a');
         a.href = url;
-        a.download = `task_${taskId}_result.txt`;
+        a.setAttribute('download', `task_${taskId}_result.txt`);
+        document.body.appendChild(a);
         a.click();
-        URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error('Error downloading task result:', error);
       }
-    },
-    addToHistory(taskId, result) {
-      const timestamp = new Date().toLocaleString();
-      const fileName = `generated_numbers_${timestamp.replace(/[/: ]/g, '_')}.txt`;
-      const history = { timestamp, fileName, result };
-      this.histories.push(history);
-      localStorage.setItem('histories', JSON.stringify(this.histories));
-    },
-    downloadHistory(history) {
-      const blob = new Blob([history.result], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = history.fileName;
-      a.click();
-      URL.revokeObjectURL(url);
-    },
-    changePage(page) {
-      this.currentPage = page;
     }
   }
 };
@@ -199,3 +168,4 @@ export default {
   border: 1px solid red;
 }
 </style>
+
