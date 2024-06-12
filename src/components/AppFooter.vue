@@ -1,6 +1,6 @@
-// src/components/Footer.vue
+<!-- src/components/AppFooter.vue -->
 <template>
-  <footer class="footer mt-auto py-3 bg-dark text-white">
+  <footer class="footer py-3 bg-dark text-white">
     <div class="container text-center">
       <div class="row">
         <div class="col-md-4">
@@ -32,21 +32,20 @@
 
 <script>
 export default {
-  name: 'Footer'
+  name: 'AppFooter'
 };
 </script>
 
 <style scoped>
 .footer {
-  position: fixed;
-  bottom: 0;
   width: 100%;
+  background-color: #343a40;
+  color: #ffffff;
+  padding: 20px 0;
 }
-
 .footer a {
   font-size: 1.5rem;
 }
-
 .footer hr {
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }

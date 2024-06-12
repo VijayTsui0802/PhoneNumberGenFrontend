@@ -1,6 +1,9 @@
+<!-- src/App.vue -->
 <template>
   <div id="app">
-    <router-view />
+    <div class="content">
+      <router-view />
+    </div>
     <AppFooter />
   </div>
 </template>
@@ -24,9 +27,13 @@ body {
 }
 
 #app {
-  flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 100vh;
+}
+
+.content {
+  flex: 1;
 }
 
 .router-view {

@@ -1,4 +1,3 @@
-// src/components/NumberGenerator.vue
 <template>
   <div class="container mt-4">
     <h1 class="mb-4 text-center">号码生成器</h1>
