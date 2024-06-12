@@ -1,3 +1,4 @@
+// src/components/NumberGenerator.vue
 <template>
   <div class="container mt-4">
     <h1 class="mb-4 text-center">号码生成器</h1>
@@ -10,6 +11,7 @@
           <button type="button" class="btn btn-danger" @click="removePrefix(index)">移除</button>
         </div>
       </div>
+      <div v-if="prefixError" class="text-danger">{{ prefixError }}</div>
     </div>
 
     <form @submit.prevent="generateNumbers" class="form-inline d-flex flex-wrap align-items-center justify-content-center mb-3">
@@ -28,11 +30,27 @@
       <button type="submit" class="btn btn-primary mb-3 me-2">生成</button>
     </form>
 
-    <div v-for="task in tasks" :key="task.taskId" class="mb-4 d-flex align-items-center">
-      <TaskProgress :taskId="task.taskId" :status="task.status" :progress="task.progress" />
-      <button v-if="!task.isCompleted" type="button" class="btn btn-danger ms-3" @click="stopTask(task.taskId)">停止</button>
-      <button v-if="task.isCompleted" type="button" class="btn btn-success ms-3" @click="downloadTaskResult(task.taskId)">下载</button>
+    <div v-if="isLoading" class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Loading...</span>
     </div>
+
+    <div v-for="task in paginatedTasks" :key="task.taskId" class="mb-4">
+      <div class="task-progress d-flex flex-column">
+        <div class="task-info d-flex flex-column flex-md-row">
+          <span class="me-2">Task ID: {{ task.taskId }}</span>
+          <span>Status: {{ task.status }}</span>
+        </div>
+        <div class="progress rounded-pill" style="width: 100%; margin-top: 10px;">
+          <div class="progress-bar" role="progressbar" :style="{ width: task.progress + '%' }"></div>
+        </div>
+      </div>
+      <div class="d-flex justify-content-end mt-2">
+        <button v-if="!task.isCompleted" type="button" class="btn btn-danger ms-3" @click="stopTask(task.taskId)">停止</button>
+        <button v-if="task.isCompleted" type="button" class="btn btn-success ms-3" @click="downloadTaskResult(task.taskId)">下载</button>
+      </div>
+    </div>
+
+    <PaginationComponent :currentPage="currentPage" :totalPages="totalPages" @page-changed="changePage" @page-size-changed="changePageSize" />
 
     <AlertMessage ref="alertMessage" />
   </div>
@@ -41,12 +59,12 @@
 <script>
 import axios from 'axios';
 import AlertMessage from './AlertMessage.vue';
-import TaskProgress from './TaskProgress.vue';
+import PaginationComponent from './PaginationComponent.vue';
 
 export default {
   components: {
     AlertMessage,
-    TaskProgress
+    PaginationComponent
   },
   data() {
     return {
@@ -56,7 +74,20 @@ export default {
       tasks: JSON.parse(localStorage.getItem('tasks') || '[]'),
       prefixError: '',
       exhaustedPrefixes: [],
+      currentPage: 1,
+      tasksPerPage: 5,
+      isLoading: false
     };
+  },
+  computed: {
+    totalPages() {
+      return Math.ceil(this.tasks.length / this.tasksPerPage);
+    },
+    paginatedTasks() {
+      const start = (this.currentPage - 1) * this.tasksPerPage;
+      const end = start + this.tasksPerPage;
+      return this.tasks.slice(start, end);
+    }
   },
   watch: {
     prefixes: {
@@ -96,6 +127,8 @@ export default {
       const prefix = this.prefixes[index];
       if (!/^\d*$/.test(prefix)) {
         this.prefixError = '前缀只能是数字';
+      } else if (prefix.length > 5) {
+        this.prefixError = '前缀长度不能超过5位';
       } else {
         this.prefixError = '';
       }
@@ -106,11 +139,14 @@ export default {
         return;
       }
 
+      this.isLoading = true;
       const response = await axios.post('/api/tasks/start/', {
         prefixes: this.prefixes,
         length: this.length,
         count: this.count
       });
+      this.isLoading = false;
+
       const taskId = response.data.task_id;
       this.tasks.unshift({ taskId, status: 'running', progress: 0, isCompleted: false });
       this.checkTaskStatus(taskId);
@@ -120,7 +156,7 @@ export default {
       if (task) {
         try {
           const response = await axios.get(`/api/tasks/${taskId}/status/`);
-          const { status, progress } = response.data;  // 移除未使用的 result
+          const { status, progress } = response.data;
           task.status = status;
           task.progress = progress;
           task.isCompleted = status === 'completed';
@@ -132,8 +168,16 @@ export default {
         }
       }
     },
-    stopTask(/* taskId */) {
-      // 实现停止任务的逻辑，可以是通过API调用告诉后端停止任务
+    async stopTask(taskId) {
+      try {
+        await axios.post(`/api/tasks/${taskId}/stop/`);
+        const task = this.tasks.find(t => t.taskId === taskId);
+        if (task) {
+          task.status = 'stopped';
+        }
+      } catch (error) {
+        console.error('Error stopping task:', error);
+      }
     },
     async downloadTaskResult(taskId) {
       try {
@@ -151,6 +195,13 @@ export default {
       } catch (error) {
         console.error('Error downloading task result:', error);
       }
+    },
+    changePage(page) {
+      this.currentPage = page;
+    },
+    changePageSize(size) {
+      this.tasksPerPage = size;
+      this.currentPage = 1; // Reset to first page
     }
   }
 };
@@ -168,4 +219,3 @@ export default {
   border: 1px solid red;
 }
 </style>
-

@@ -5,7 +5,7 @@
       <span>Status: {{ status }}</span>
     </div>
     <div class="progress rounded-pill" style="width: 60%; margin-left: 10px;">
-      <div class="progress-bar" role="progressbar" :style="{ width: progress + '%' }"></div>
+      <div class="progress-bar" role="progressbar" :style="{ width: progress + '%', background: progress < 50 ? 'red' : 'green' }"></div>
     </div>
   </div>
 </template>
@@ -27,7 +27,6 @@ export default {
   background: #f0f0f0;
 }
 .progress-bar {
-  background: #4caf50;
   height: 100%;
 }
 </style>
